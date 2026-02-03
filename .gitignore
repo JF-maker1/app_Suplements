@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+# Ignore binary images in root (input files)
+*.jpg
+*.png
+*.jpeg
+
+# Ignore storage bucket folder
+raw_scans/
+
+# RDM Snapshot Tool (Meta-data)
+rdm_snapshot.py
+_project_snapshot.md
