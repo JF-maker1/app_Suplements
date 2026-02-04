@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # BACKEND SERVICE (FastAPI + Supabase Connector)
+  backend:
+    image: rdm-backend:sprint03
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rdm-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    # Mount source code for hot-reload during dev (optional but useful)
+    volumes:
+      - ./backend/app:/app/app
+    restart: always
+    networks:
+      - rdm-network
+
+  # FRONTEND SERVICE (React + Vite + Nginx)
+  frontend:
+    image: rdm-frontend:sprint03
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rdm-frontend
+    ports:
+      - "3000:80" # Maps Host 3000 -> Container 80 (Nginx)
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - rdm-network
+
+networks:
+  rdm-network:
+    driver: bridge
