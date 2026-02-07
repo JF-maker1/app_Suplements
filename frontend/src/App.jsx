@@ -6,6 +6,9 @@ import {
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+// IMPORT CHAT WIDGET
+import ChatWidget from './components/ChatWidget';
+
 // --- UTILS ---
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -51,7 +54,7 @@ const Header = () => (
         </h1>
       </div>
       <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
-        <span className="hidden sm:inline">Cycle 4 | Phase 2.3 | Dashboard</span>
+        <span className="hidden sm:inline">Cycle 5 | Agentic Mode | Dashboard</span>
         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
       </div>
     </div>
@@ -216,105 +219,115 @@ const ProductCard = ({ scan, onUpdate, onSourceClick }) => {
   const [formData, setFormData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Initialize form data when entering edit mode
+  const { data, image_url, source_url } = scan;
+  
+  // Initialize formData when entering edit mode
   useEffect(() => {
-    if (isEditing) {
+    if (isEditing && data) {
       setFormData({
-        full_name: scan.data?.full_name || "",
-        detected_price: scan.data?.detected_price || "",
-        source_url: scan.source_url || ""
+        full_name: data.full_name || "",
+        brand: data.brand || "",
+        detected_price: data.detected_price || "",
+        currency: data.currency || "CZK",
+        source_url: source_url || "",
       });
     }
-  }, [isEditing, scan]);
+  }, [isEditing, data, source_url]);
 
   const handleSave = async () => {
     setIsSaving(true);
-    const updates = {};
-    
-    // Diff Logic: Posílat jen změny a prázdné hodnoty převádět na null nebo validní typy
-    if (formData.full_name !== scan.data?.full_name) updates.full_name = formData.full_name;
-    if (formData.source_url !== scan.source_url) updates.source_url = formData.source_url || null;
-    
-    // Price konverze
-    const newPrice = formData.detected_price ? parseFloat(formData.detected_price) : null;
-    if (newPrice !== scan.data?.detected_price) updates.detected_price = newPrice;
+    const updatePayload = {
+      data: {
+        full_name: formData.full_name,
+        brand: formData.brand,
+        detected_price: formData.detected_price ? Number(formData.detected_price) : null,
+        currency: formData.currency,
+      },
+      source_url: formData.source_url || null,
+    };
 
-    if (Object.keys(updates).length > 0) {
-      await onUpdate(scan.scan_id, updates);
-    }
-    
+    const success = await onUpdate(scan.scan_id, updatePayload);
     setIsSaving(false);
-    setIsEditing(false);
+    if (success) setIsEditing(false);
   };
 
-  const { data, source_url, created_at } = scan;
-  if (!data) return null; // Safety check
+  if (!data) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden flex flex-col h-full group">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden flex flex-col h-full">
       
-      {/* Card Header & Image */}
+      {/* Header Image */}
       <div className="relative h-40 bg-slate-100 overflow-hidden border-b border-slate-100">
-        {scan.image_url ? (
-          <img src={scan.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        {image_url ? (
+          <img src={image_url} alt="" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-400">
             <FileText className="w-8 h-8" />
           </div>
         )}
         
-        {/* Actions Overlay */}
-        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-           <button 
-             onClick={() => setIsEditing(true)}
-             className="p-1.5 bg-white/90 backdrop-blur text-slate-600 rounded-lg hover:text-blue-600 shadow-sm border border-slate-200"
-             title="Editovat"
-           >
-             <Edit2 className="w-4 h-4" />
-           </button>
-        </div>
-
-        {/* Status Badge */}
-        <div className="absolute top-2 left-2">
-           <span className="px-2 py-1 bg-white/90 backdrop-blur text-xs font-bold text-slate-700 rounded-md border border-slate-200/50">
-             {data.category || "Neznámá kategorie"}
-           </span>
-        </div>
+        {/* Top-right Edit Button */}
+        {!isEditing && (
+          <button 
+            onClick={() => setIsEditing(true)}
+            className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm hover:bg-white hover:shadow-md transition-all"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-slate-600" />
+          </button>
+        )}
       </div>
 
-      {/* Card Content */}
+      {/* Body */}
       <div className="p-4 flex-1 flex flex-col">
         {isEditing ? (
           // --- EDIT MODE ---
-          <div className="space-y-3 flex-1">
+          <div className="space-y-3">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Název</label>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Název</label>
               <input 
                 type="text" 
-                value={formData.full_name} 
+                value={formData.full_name || ""} 
                 onChange={e => setFormData({...formData, full_name: e.target.value})}
-                className="w-full text-sm p-1.5 border border-blue-300 rounded focus:ring-2 focus:ring-blue-200 outline-none" 
+                className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Cena</label>
-                <input 
-                  type="number" 
-                  value={formData.detected_price} 
-                  onChange={e => setFormData({...formData, detected_price: e.target.value})}
-                  className="w-full text-sm p-1.5 border border-slate-300 rounded" 
-                />
-               </div>
-               <div className="flex items-end">
-                 <span className="text-sm text-slate-400 p-2">CZK</span>
-               </div>
-            </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Zdroj (URL)</label>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Značka</label>
               <input 
                 type="text" 
-                value={formData.source_url} 
+                value={formData.brand || ""} 
+                onChange={e => setFormData({...formData, brand: e.target.value})}
+                className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
+              />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Cena</label>
+                <input 
+                  type="number" 
+                  value={formData.detected_price || ""} 
+                  onChange={e => setFormData({...formData, detected_price: e.target.value})}
+                  className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
+                />
+              </div>
+              <div className="w-20">
+                <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Měna</label>
+                <select 
+                  value={formData.currency || "CZK"} 
+                  onChange={e => setFormData({...formData, currency: e.target.value})}
+                  className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1"
+                >
+                  <option value="CZK">CZK</option>
+                  <option value="EUR">EUR</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">URL</label>
+              <input 
+                type="text" 
+                value={formData.source_url || ""} 
                 onChange={e => setFormData({...formData, source_url: e.target.value})}
                 className="w-full text-xs p-1.5 border border-slate-300 rounded font-mono text-slate-600" 
                 placeholder="https://..."
@@ -526,6 +539,9 @@ function App() {
         )}
 
       </main>
+
+      {/* --- AGENTIC WIDGET INTEGRATION --- */}
+      <ChatWidget />
     </div>
   );
 }

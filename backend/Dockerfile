@@ -1,27 +1,47 @@
-# Base image
-FROM python:3.13-slim
+# ==========================================
+# STAGE 1: BUILDER (Compilation Layer)
+# Base: Full Python (obsahuje GCC, Make, headers) - nutné pro kompilaci knihoven
+# ==========================================
+FROM python:3.13 as builder
 
-# Set working directory
 WORKDIR /app
 
-# Environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# 1. Environment: Vynucení user-space instalace pro snadné kopírování
+ENV PYTHONUSERBASE=/root/.local \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# 2. Install Dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# --user flag nainstaluje balíčky do /root/.local
+# --no-cache-dir zajistí, že si neuložíme stažené .whl soubory
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copy application code
+# ==========================================
+# STAGE 2: FINAL (Runtime Layer)
+# Base: Slim Python (Minimal footprint) - pouze pro běh
+# ==========================================
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# 3. Environment: Nastavení PATH pro importy z .local
+# Musíme systému říct, kde hledat balíčky zkopírované z builderu
+ENV PYTHONUSERBASE=/root/.local \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/root/.local/bin:$PATH"
+
+# 4. Copy Artifacts (Závislosti z Builderu)
+# Kritický krok: Přenášíme pouze zkompilované knihovny, ne kompilátory
+COPY --from=builder /root/.local /root/.local
+
+# 5. Copy Application Code
+# Kopírujeme až nakonec, abychom využili Docker cache pro vrstvy výše
 COPY . .
 
-# Expose port
+# 6. Runtime Metadata
 EXPOSE 8000
 
-# Command to run the application
+# Spuštění aplikace
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

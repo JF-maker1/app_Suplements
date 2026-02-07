@@ -3,11 +3,12 @@ import uuid
 import logging
 from typing import List, Optional
 from tempfile import NamedTemporaryFile
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path, Body
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path, Body, BackgroundTasks
 from starlette.concurrency import run_in_threadpool
 
 from app.services.gemini_service import GeminiService
 from app.services.db import SupabaseService
+from app.services.etl_service import EtlService  # <--- HOTFIX: Import ETL Služby
 from app.schemas import ScanResponse, ProcessingStatus, ProductAnalysisResult, ScanUpdate
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/scan", tags=["Scanning"])
 # Services Initialization
 gemini_service = GeminiService()
 db_service = SupabaseService()
+etl_service = EtlService()  # <--- HOTFIX: Init ETL Služby
 
 # --- SPRINT 04 NEW ENDPOINTS ---
 
@@ -60,8 +62,6 @@ async def update_scan(
     """
     try:
         # 1. Prepare data (Filter out None/Unset values)
-        # Toto zajistí, že pokud pošlu jen {"detected_price": 200},
-        # ostatní pole jako full_name zůstanou nedotčena.
         clean_data = update_data.model_dump(exclude_unset=True)
         
         if not clean_data:
@@ -89,6 +89,7 @@ async def update_scan(
 
 @router.post("/analyze", response_model=ScanResponse)
 async def analyze_product(
+    background_tasks: BackgroundTasks,  # <--- HOTFIX: Dependency Injection
     file: UploadFile = File(...),
 ):
     """
@@ -98,6 +99,8 @@ async def analyze_product(
     3. EXTENDED TRANSACTION SCOPE:
        - If AI Analysis fails -> Rollback (Delete Image).
        - If DB Insert fails -> Rollback (Delete Image).
+    4. BACKGROUND ETL TRIGGER (HOTFIX):
+       - Triggers normalization and embedding generation asynchronously.
     """
     
     # 1. Input Validation
@@ -121,7 +124,6 @@ async def analyze_product(
         # STEP 1: UPLOAD IMAGE (Blocking I/O -> Threadpool)
         # ---------------------------------------------------------
         logger.info("1. Uploading image to Supabase (Threadpool)...")
-        # Pokud toto selže, nic se neděje (nic není uloženo), vyhodí to error a konec.
         image_url = await run_in_threadpool(
             db_service.upload_file,
             file_bytes=content,
@@ -130,7 +132,6 @@ async def analyze_product(
         )
 
         # START OF ATOMIC TRANSACTION
-        # Od teď, pokud cokoliv selže, musíme smazat obrázek (Rollback).
         try:
             # ---------------------------------------------------------
             # STEP 2: ANALYZE (Native Async)
@@ -151,7 +152,6 @@ async def analyze_product(
                 "full_name": analysis_result.full_name,
                 "image_url": image_url,
                 "extra_metadata": analysis_result.model_dump(mode='json'),
-                # SPRINT 04: Pokud AI vrátí source_url (zatím ne, ale model to má), uložíme ho.
                 "source_url": analysis_result.source_url 
             }
 
@@ -162,6 +162,25 @@ async def analyze_product(
             
             logger.info(f"✅ Transaction Complete. ID: {db_record.get('id')}")
             
+            # ---------------------------------------------------------
+            # STEP 4: TRIGGER ETL (BACKGROUND TASK) - HOTFIX
+            # ---------------------------------------------------------
+            # Sestavíme textový kontext pro ETL službu (podobně jako v backfill skriptu)
+            raw_text_payload = f"""
+            Product: {analysis_result.full_name}
+            Brand: {analysis_result.brand}
+            Composition Data: {analysis_result.composition.model_dump_json()}
+            Marketing Claims: {analysis_result.marketing.model_dump_json()}
+            Description: {analysis_result.marketing.description}
+            """
+            
+            logger.info("🚀 Scheduling Background ETL Task...")
+            background_tasks.add_task(
+                etl_service.process_scan,
+                scan_id=str(db_record.get("id")),
+                raw_text=raw_text_payload
+            )
+
             return ScanResponse(
                 scan_id=str(db_record.get("id")),
                 status=ProcessingStatus.PARSED,
@@ -172,7 +191,7 @@ async def analyze_product(
 
         except Exception as transaction_error:
             # -----------------------------------------------------
-            # STEP 4: GLOBAL ROLLBACK
+            # ROLLBACK LOGIC
             # -----------------------------------------------------
             logger.error(f"Transaction Failed ({transaction_error}). executing Rollback...")
             await run_in_threadpool(

@@ -62,8 +62,6 @@ class SupabaseService:
             logger.error(f"❌ DB Insert failed: {e}")
             raise e
 
-    # --- SPRINT 04 NEW METHODS (Validated against Snapshot) ---
-
     def get_scans(self, 
                   limit: int = 20, 
                   offset: int = 0, 
@@ -74,7 +72,6 @@ class SupabaseService:
                   ) -> List[Dict[str, Any]]:
         """
         [Blocking I/O] Fetches scans with dynamic filtering.
-        Implements FR-01: Advanced Search API.
         """
         try:
             # 1. Base Query
@@ -85,7 +82,6 @@ class SupabaseService:
                 query = query.eq("source_url", source_url)
             
             if search_query:
-                # Fulltext search nad názvem (case-insensitive)
                 query = query.ilike("full_name", f"%{search_query}%")
                 
             # Filtrování nad JSONB (extra_metadata -> detected_price)
@@ -109,7 +105,7 @@ class SupabaseService:
     def update_scan_data(self, scan_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         [Blocking I/O] Updates a scan record.
-        Handles merging of top-level columns and JSONB data to prevent data loss.
+        FIXED: Uses explicit two-step process (Update -> Fetch) to avoid chaining errors.
         """
         if not update_data:
             return None
@@ -118,7 +114,7 @@ class SupabaseService:
             logger.info(f"Updating scan {scan_id} with keys: {list(update_data.keys())}")
             
             # 1. Split data into Top-Level Columns vs JSONB Updates
-            top_level_fields = ["full_name", "source_url", "status"]
+            top_level_fields = ["full_name", "source_url", "status", "derived_data", "embedding"]
             db_payload = {}
             json_updates = {}
 
@@ -126,7 +122,6 @@ class SupabaseService:
                 if key in top_level_fields:
                     db_payload[key] = value
                 elif key in ["detected_price", "currency"]:
-                    # Price/Currency are stored inside extra_metadata in current architecture
                     json_updates[key] = value
                 else:
                     logger.warning(f"Ignored unknown field in update: {key}")
@@ -136,13 +131,19 @@ class SupabaseService:
                 current_record = self.client.table("scans").select("extra_metadata").eq("id", scan_id).single().execute()
                 if current_record.data:
                     current_metadata = current_record.data.get("extra_metadata", {}) or {}
-                    current_metadata.update(json_updates) # Merge changes
+                    current_metadata.update(json_updates)
                     db_payload["extra_metadata"] = current_metadata
             
-            # 3. Execute Update
+            # 3. Execute Update (SAFE MODE)
             if db_payload:
-                response = self.client.table("scans").update(db_payload).eq("id", scan_id).execute()
-                return response.data[0] if response.data else None
+                # Krok A: Provedeme update (bez .select(), vrátí 204)
+                self.client.table("scans").update(db_payload).eq("id", scan_id).execute()
+                
+                # Krok B: Načteme aktualizovaný záznam
+                # Toto je robustnější než spoléhat na 'return=representation' hlavičku
+                updated_response = self.client.table("scans").select("*").eq("id", scan_id).single().execute()
+                
+                return updated_response.data if updated_response.data else None
             
             return None
 

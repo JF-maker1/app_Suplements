@@ -2,7 +2,7 @@ import logging
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import scan
+from app.routers import scan, agent_chat  # <--- INTEGRATION POINT 1
 from app.config import settings
 
 # Konfigurace Loggování
@@ -17,23 +17,26 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="RDM AI Scraper API",
     version="0.8.0",
-    description="Sprint 04: Intelligence & Optimization"
+    description="Sprint 05: Hybrid Intelligence & Agentic Orchestration"
 )
 
-# --- CORS KONFIGURACE (CRITICAL FIX) ---
-# Povolujeme všechny originy (*), aby Frontend mohl volat Backend
-# z jakékoli IP adresy (localhost, 192.168.x.x, atd.)
+# --- CORS KONFIGURACE ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Povolit vše pro vývoj
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Povolit GET, POST, PATCH, OPTIONS...
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Registrace Routerů
 app.include_router(scan.router)
+app.include_router(agent_chat.router)  # <--- INTEGRATION POINT 2 (Activated)
 
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "RDM AI Scraper Backend is running"}
+    return {
+        "status": "online", 
+        "message": "RDM AI Scraper Backend is running",
+        "features": ["Vision Analysis", "Hybrid Agent", "Vector Search"]
+    }

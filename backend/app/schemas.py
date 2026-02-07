@@ -122,9 +122,21 @@ class ScanUpdate(BaseModel):
     detected_price: Optional[float] = None
     currency: Optional[str] = None
 
+    # Sanitizer pro URL
     @field_validator('source_url', mode='before')
     @classmethod
     def sanitize_url(cls, v):
         if isinstance(v, str) and v.lower() in ('null', 'none', ''):
+            return None
+        return v
+
+    # FIX: Sanitizer pro Cenu (řeší 422 chybu při prázdném stringu)
+    # TENTO VALIDÁTOR VÁM CHYBĚL
+    @field_validator('detected_price', mode='before')
+    @classmethod
+    def sanitize_price(cls, v):
+        # Frontend může poslat prázdný string "" pokud user smaže hodnotu.
+        # Pydantic by to normálně odmítl (není float), proto to musíme převést na None.
+        if v == "" or v is None:
             return None
         return v
