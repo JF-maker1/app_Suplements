@@ -118,6 +118,7 @@ class ScanUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     full_name: Optional[str] = None
+    brand: Optional[str] = None
     source_url: Optional[str] = None
     detected_price: Optional[float] = None
     currency: Optional[str] = None

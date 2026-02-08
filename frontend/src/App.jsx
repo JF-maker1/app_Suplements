@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Upload, FileText, CheckCircle, AlertCircle, Loader2, Pill, Activity, 
-  ChevronRight, Ban, Search, Filter, Edit2, Save, X, ExternalLink, Tag, RefreshCw, Trash2
+  ChevronRight, Ban, Search, Filter, Edit2, Save, X, ExternalLink, Tag, RefreshCw, Trash2,
+  LayoutDashboard, FlaskConical, MessageSquare, Send, Bot, User, Sparkles, Database, Layers, Code, Play
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-
-// IMPORT CHAT WIDGET
-import ChatWidget from './components/ChatWidget';
+// FIX: Použití ESM importu pro Supabase (řeší chybu "Could not resolve" v preview)
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // --- UTILS ---
 function cn(...inputs) {
@@ -15,235 +15,285 @@ function cn(...inputs) {
 }
 
 // --- DYNAMIC API CONFIGURATION ---
-// Změna: Dynamické zjištění IP adresy serveru.
-// Pokud běží frontend na localhost, použije localhost.
-// Pokud běží na 192.168.x.x, použije tuto IP i pro backend (port 8000).
 const PROTOCOL = window.location.protocol;
 const HOSTNAME = window.location.hostname;
 const API_URL = `${PROTOCOL}//${HOSTNAME}:8000`;
 
+// --- SUPABASE CLIENT ---
+// FIX: Bezpečné načtení proměnných prostředí (řeší chybu "import.meta is not available")
+const getEnv = () => {
+  try {
+    return import.meta.env || {};
+  } catch {
+    return {};
+  }
+};
+const env = getEnv();
+const supabaseUrl = env.VITE_SUPABASE_URL || 'YOUR_SUPABASE_URL';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 // --- HOOKS ---
-// Custom hook pro debounce hodnoty (zpoždění vyhledávání)
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
-
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedValue(value);
     }, delay);
-    return () => {
-      clearTimeout(handler);
-    };
+    return () => { clearTimeout(handler); };
   }, [value, delay]);
-
   return debouncedValue;
 }
 
-// --- COMPONENTS ---
+// =====================================================================
+// COMPONENT: REPORT RENDERER (Inline)
+// =====================================================================
+const ReportRenderer = ({ reportId, params = {} }) => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-// 1. Header
-const Header = () => (
-  <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
-    <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div className="bg-blue-600 p-2 rounded-lg shadow-lg shadow-blue-600/20">
-          <Activity className="w-5 h-5 text-white" />
-        </div>
-        <h1 className="font-bold text-xl tracking-tight text-slate-900">
-          RDM <span className="text-blue-600">ProductScanner</span>
-        </h1>
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        let query;
+        if (reportId === 'report_magnesium_overview') {
+          query = supabase
+            .from('view_products_standardized')
+            .select('*')
+            .or('product_name.ilike.%magnesium%,ingredient_name.ilike.%magnesium%')
+            .order('amount_mg', { ascending: false });
+        } 
+        else if (reportId === 'report_protein_overview') {
+          query = supabase
+            .from('view_products_standardized')
+            .select('*')
+            .ilike('product_name', '%protein%')
+            .order('price', { ascending: true });
+        }
+        else {
+           console.warn(`Report ID ${reportId} not implemented.`);
+           setData([]); 
+           setLoading(false);
+           return;
+        }
+
+        const { data: result, error: dbError } = await query;
+        if (dbError) throw dbError;
+        setData(result || []);
+
+      } catch (err) {
+        console.error("Report Error:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (reportId) {
+      fetchData();
+    }
+  }, [reportId]);
+
+  if (loading) return <div className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600" /></div>;
+  if (error) return <div className="p-4 text-red-600 bg-red-50 rounded">Chyba: {error}</div>;
+  if (!data.length) return <div className="p-4 text-center text-slate-500">Žádná data.</div>;
+
+  return (
+    <div className="w-full overflow-hidden rounded-lg border border-slate-200 shadow-sm my-2 bg-white">
+      <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 font-bold text-xs uppercase text-slate-700">
+        SQL REPORT: {reportId}
       </div>
-      <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
-        <span className="hidden sm:inline">Cycle 5 | Agentic Mode | Dashboard</span>
-        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase">
+            <tr>
+              <th className="px-3 py-2">Produkt</th>
+              <th className="px-3 py-2 text-right">Množství</th>
+              <th className="px-3 py-2 text-right">Cena</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {data.map((row, idx) => (
+              <tr key={idx}>
+                <td className="px-3 py-2">
+                  <div className="font-medium text-slate-900 truncate max-w-[150px]">{row.product_name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{row.ingredient_name}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono">{row.amount_mg ? `${row.amount_mg} mg` : '-'}</td>
+                <td className="px-3 py-2 text-right font-mono text-blue-600">{row.price ? `${row.price} ${row.currency || ''}` : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
-  </header>
-);
+  );
+};
 
-// 2. Upload Zone (Compact Version)
-const UploadZone = ({ onUploadSuccess }) => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [error, setError] = useState(null);
-  const inputRef = useRef(null);
+// =====================================================================
+// COMPONENT: CHAT WIDGET
+// =====================================================================
+const ChatWidget = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([{ role: 'model', type: 'message', content: 'Ahoj! Jsem RDM Asistent. Zkus napsat "Srovnej hořčíky".' }]);
+  const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
 
-  const processFile = async (file) => {
-    setIsAnalyzing(true);
-    setError(null);
-    
-    const formData = new FormData();
-    formData.append('file', file);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isOpen]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    const userMsg = { role: 'user', type: 'message', content: inputValue };
+    setMessages(prev => [...prev, userMsg]);
+    setInputValue("");
+    setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/scan/analyze`, {
+      const response = await fetch(`${API_URL}/agent/chat`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: userMsg.content, history: messages.map(m => ({ role: m.role, content: m.content || "" })) })
       });
 
-      if (!response.ok) throw new Error(`Upload Failed: ${response.status}`);
-      
+      if (!response.ok) throw new Error("Chyba komunikace");
       const data = await response.json();
-      if (data.status === 'PARSED') {
-        onUploadSuccess(data); // Callback do rodiče
-      } else {
-        throw new Error("Analýza nevrátila validní data.");
-      }
-    } catch (err) {
-      console.error(err);
-      setError(err.message);
+      
+      setMessages(prev => [...prev, { role: 'model', type: data.type, content: data.content, payload: data.payload }]);
+
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'model', type: 'message', content: 'Omlouvám se, došlo k chybě.' }]);
     } finally {
-      setIsAnalyzing(false);
+      setIsLoading(false);
     }
   };
 
-  // Drag & Drop Handlers
-  const handleDrag = (e) => {
-    e.preventDefault(); e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-    else if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault(); e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files?.[0]) processFile(e.dataTransfer.files[0]);
-  };
+  if (!isOpen) return <button onClick={() => setIsOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center z-50"><MessageSquare className="w-7 h-7" /></button>;
 
   return (
-    <div className="mb-6">
-      <form
-        className={cn(
-          "relative h-32 flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer overflow-hidden group",
-          dragActive ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50",
-          isAnalyzing && "pointer-events-none opacity-80 bg-slate-50"
-        )}
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-      >
-        <input ref={inputRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} accept="image/*" />
-
-        {isAnalyzing ? (
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-            <span className="font-medium text-slate-700">Analyzuji obraz (Gemini AI)...</span>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-center">
-            <div className="flex items-center gap-2 text-slate-600 group-hover:text-blue-600 transition-colors">
-              <Upload className="w-5 h-5" />
-              <span className="font-medium">Nahrát nový produkt</span>
+    <div className="fixed bottom-6 right-6 w-96 h-[500px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col z-50 overflow-hidden">
+      <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
+        <div className="flex items-center gap-2"><Bot className="w-5 h-5" /><span className="font-bold text-sm">RDM Asistent</span></div>
+        <button onClick={() => setIsOpen(false)}><X className="w-5 h-5" /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+        {messages.map((msg, idx) => (
+          <div key={idx} className={clsx("flex gap-3", msg.role === 'user' ? "flex-row-reverse" : "flex-row")}>
+            <div className={clsx("w-8 h-8 rounded-full flex items-center justify-center shrink-0", msg.role === 'user' ? "bg-slate-200" : "bg-blue-100 text-blue-600")}>{msg.role === 'user' ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}</div>
+            <div className={clsx("max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm", msg.role === 'user' ? "bg-blue-600 text-white" : "bg-white border border-slate-100")}>
+              {msg.type === 'command' ? <ReportRenderer reportId={msg.payload.report_id} params={msg.payload.params} /> : <p className="whitespace-pre-wrap">{msg.content}</p>}
             </div>
-            <p className="text-xs text-slate-400">Podporuje JPG, PNG (Max 5MB)</p>
           </div>
-        )}
-      </form>
-      {error && (
-        <div className="mt-2 text-xs text-red-600 flex items-center gap-1">
-          <Ban className="w-3 h-3" /> {error}
-        </div>
-      )}
+        ))}
+        {isLoading && <div className="text-xs text-slate-400 pl-12">Přemýšlím...</div>}
+        <div ref={messagesEndRef} />
+      </div>
+      <form onSubmit={handleSendMessage} className="p-3 border-t bg-white flex gap-2"><input value={inputValue} onChange={e => setInputValue(e.target.value)} placeholder="Zeptej se..." className="flex-1 border rounded-xl px-4 py-2 text-sm" /><button type="submit" disabled={isLoading} className="p-2 bg-blue-600 text-white rounded-xl"><Send className="w-5 h-5" /></button></form>
     </div>
   );
 };
 
-// 3. Filter Bar
-const FilterBar = ({ filters, setFilters, onReset }) => {
+// =====================================================================
+// COMPONENT: DATA LAB
+// =====================================================================
+const DataLab = () => {
+  const [query, setQuery] = useState("Kolik jsem utratil za proteiny?");
+  const [response, setResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleAnalyze = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/lab/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
+      const data = await res.json();
+      setResponse(data);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
   return (
-    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-end md:items-center">
-      
-      {/* Search Query */}
-      <div className="flex-1 w-full relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Hledat produkt..."
-          value={filters.q}
-          onChange={(e) => setFilters(prev => ({ ...prev, q: e.target.value }))}
-          className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
-        />
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="bg-white p-4 rounded-xl border mb-6 shadow-sm">
+        <form onSubmit={handleAnalyze} className="flex gap-4">
+          <input value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-slate-50 border rounded-lg px-4 py-3 text-sm font-mono" />
+          <button type="submit" disabled={loading} className="px-6 bg-purple-600 text-white rounded-lg font-bold flex items-center gap-2">{loading ? <Loader2 className="animate-spin" /> : <Play />} Analyze</button>
+        </form>
       </div>
-
-      {/* Price Range */}
-      <div className="flex items-center gap-2 w-full md:w-auto">
-        <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-          <span className="text-xs text-slate-500 font-medium">Cena:</span>
-          <input
-            type="number"
-            placeholder="Od"
-            value={filters.minPrice}
-            onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value }))}
-            className="w-16 bg-transparent text-sm focus:outline-none border-b border-transparent focus:border-blue-500 text-center"
-          />
-          <span className="text-slate-300">-</span>
-          <input
-            type="number"
-            placeholder="Do"
-            value={filters.maxPrice}
-            onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
-            className="w-16 bg-transparent text-sm focus:outline-none border-b border-transparent focus:border-blue-500 text-center"
-          />
-        </div>
-      </div>
-
-      {/* Active Filters / Reset */}
-      {(filters.sourceUrl || filters.minPrice || filters.maxPrice) && (
-        <div className="flex items-center gap-2">
-           <button 
-            onClick={onReset}
-            className="p-2 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-lg transition-colors"
-            title="Resetovat filtry"
-          >
-            <X className="w-5 h-5" />
-          </button>
+      {response && (
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="bg-white p-4 rounded-xl border shadow-sm">
+            <h3 className="font-bold text-slate-500 text-xs uppercase mb-2">Intent</h3>
+            <div className="text-xl font-bold text-purple-600">{response.intent}</div>
+          </div>
+          <div className="bg-slate-900 p-4 rounded-xl shadow-sm text-green-400 font-mono text-xs overflow-auto max-h-96">
+            <pre>{JSON.stringify(response, null, 2)}</pre>
+          </div>
         </div>
       )}
-      
-      {filters.sourceUrl && (
-         <div className="hidden md:flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-xs font-medium border border-blue-100 max-w-[200px]">
-           <Tag className="w-3 h-3 shrink-0" />
-           <span className="truncate">Zdroj: {new URL(filters.sourceUrl).hostname}</span>
-         </div>
-      )}
-
     </div>
   );
 };
 
-// 4. Product Card (Editable)
+// =====================================================================
+// MAIN APP COMPONENTS
+// =====================================================================
+
+const UploadZone = ({ onUploadSuccess }) => {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const processFile = async (file) => {
+    setIsAnalyzing(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${API_URL}/scan/analyze`, { method: 'POST', body: formData });
+      if (res.ok) onUploadSuccess();
+    } catch (e) { console.error(e); } finally { setIsAnalyzing(false); }
+  };
+
+  return (
+    <div onClick={() => fileInputRef.current.click()} className="h-32 border-2 border-dashed rounded-xl flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors mb-6 bg-white">
+      <input ref={fileInputRef} type="file" className="hidden" onChange={e => e.target.files[0] && processFile(e.target.files[0])} accept="image/*" />
+      {isAnalyzing ? <div className="flex items-center gap-2 text-blue-600"><Loader2 className="animate-spin" /> Analyzuji...</div> : <div className="text-slate-500 flex items-center gap-2"><Upload /> Nahrát produkt</div>}
+    </div>
+  );
+};
+
 const ProductCard = ({ scan, onUpdate, onSourceClick }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
-
   const { data, image_url, source_url } = scan;
   
-  // Initialize formData when entering edit mode
-  useEffect(() => {
-    if (isEditing && data) {
-      setFormData({
-        full_name: data.full_name || "",
-        brand: data.brand || "",
-        detected_price: data.detected_price || "",
-        currency: data.currency || "CZK",
-        source_url: source_url || "",
-      });
-    }
+  useEffect(() => { 
+    if (isEditing && data) { 
+      setFormData({ 
+        full_name: data.full_name || "", 
+        brand: data.brand || "", 
+        detected_price: data.detected_price || "", 
+        currency: data.currency || "CZK", 
+        source_url: source_url || "" 
+      }); 
+    } 
   }, [isEditing, data, source_url]);
 
   const handleSave = async () => {
     setIsSaving(true);
-    const updatePayload = {
-      data: {
+    
+    // FIX: Flattened Payload for 422 Error Fix
+    // Zploštění dat pro API (řeší chybu 422 Unprocessable Content)
+    // Odesíláme plochý objekt { full_name, brand, ... } místo { data: { ... } }
+    const updatePayload = { 
         full_name: formData.full_name,
         brand: formData.brand,
         detected_price: formData.detected_price ? Number(formData.detected_price) : null,
         currency: formData.currency,
-      },
-      source_url: formData.source_url || null,
+        source_url: formData.source_url || null
     };
 
     const success = await onUpdate(scan.scan_id, updatePayload);
@@ -254,293 +304,91 @@ const ProductCard = ({ scan, onUpdate, onSourceClick }) => {
   if (!data) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden flex flex-col h-full">
-      
-      {/* Header Image */}
-      <div className="relative h-40 bg-slate-100 overflow-hidden border-b border-slate-100">
-        {image_url ? (
-          <img src={image_url} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-400">
-            <FileText className="w-8 h-8" />
-          </div>
-        )}
-        
-        {/* Top-right Edit Button */}
-        {!isEditing && (
-          <button 
-            onClick={() => setIsEditing(true)}
-            className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm hover:bg-white hover:shadow-md transition-all"
-          >
-            <Edit2 className="w-3.5 h-3.5 text-slate-600" />
-          </button>
-        )}
+    <div className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col h-full">
+      <div className="relative h-40 bg-slate-100">
+        {image_url ? <img src={image_url} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-slate-400"><FileText /></div>}
+        {!isEditing && <button onClick={() => setIsEditing(true)} className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:shadow-md"><Edit2 className="w-3.5 h-3.5 text-slate-600" /></button>}
       </div>
-
-      {/* Body */}
       <div className="p-4 flex-1 flex flex-col">
         {isEditing ? (
-          // --- EDIT MODE ---
           <div className="space-y-3">
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Název</label>
-              <input 
-                type="text" 
-                value={formData.full_name || ""} 
-                onChange={e => setFormData({...formData, full_name: e.target.value})}
-                className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
-              />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Značka</label>
-              <input 
-                type="text" 
-                value={formData.brand || ""} 
-                onChange={e => setFormData({...formData, brand: e.target.value})}
-                className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
-              />
-            </div>
+            <input value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full text-sm p-1.5 border rounded" placeholder="Název" />
+            <input value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} className="w-full text-sm p-1.5 border rounded" placeholder="Značka" />
             <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Cena</label>
-                <input 
-                  type="number" 
-                  value={formData.detected_price || ""} 
-                  onChange={e => setFormData({...formData, detected_price: e.target.value})}
-                  className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1" 
-                />
-              </div>
-              <div className="w-20">
-                <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Měna</label>
-                <select 
-                  value={formData.currency || "CZK"} 
-                  onChange={e => setFormData({...formData, currency: e.target.value})}
-                  className="w-full text-sm p-1.5 border border-slate-300 rounded mt-1"
-                >
-                  <option value="CZK">CZK</option>
-                  <option value="EUR">EUR</option>
-                  <option value="USD">USD</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">URL</label>
-              <input 
-                type="text" 
-                value={formData.source_url || ""} 
-                onChange={e => setFormData({...formData, source_url: e.target.value})}
-                className="w-full text-xs p-1.5 border border-slate-300 rounded font-mono text-slate-600" 
-                placeholder="https://..."
-              />
+              <input type="number" value={formData.detected_price} onChange={e => setFormData({...formData, detected_price: e.target.value})} className="flex-1 text-sm p-1.5 border rounded" placeholder="Cena" />
+              <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})} className="w-20 text-sm p-1.5 border rounded"><option>CZK</option><option>EUR</option></select>
             </div>
           </div>
         ) : (
-          // --- VIEW MODE ---
           <>
-            <div className="mb-2">
-              <h3 className="font-bold text-slate-900 leading-tight line-clamp-2" title={data.full_name}>
-                {data.full_name}
-              </h3>
-              <p className="text-xs text-blue-600 font-bold mt-1 uppercase tracking-wider">{data.brand}</p>
-            </div>
-
-            <div className="mt-auto pt-3 border-t border-slate-50 flex items-center justify-between">
-              <div className="flex flex-col">
-                <span className="text-xs text-slate-400">Cena</span>
-                <span className="font-mono font-bold text-slate-700">
-                  {data.detected_price ? `${data.detected_price} ${data.currency || 'CZK'}` : '—'}
-                </span>
-              </div>
-              
-              <div className="flex flex-col items-end max-w-[50%]">
-                 <span className="text-xs text-slate-400">Zdroj</span>
-                 {source_url ? (
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); onSourceClick(source_url); }}
-                    className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 hover:underline truncate max-w-full"
-                    title={source_url}
-                   >
-                     <ExternalLink className="w-3 h-3 shrink-0" />
-                     <span className="truncate">{new URL(source_url).hostname}</span>
-                   </button>
-                 ) : (
-                   <span className="text-xs text-slate-300 italic">Neuveden</span>
-                 )}
-              </div>
-            </div>
-            
-            {/* Ingredients Preview */}
-            <div className="mt-3 flex flex-wrap gap-1">
-              {data.composition?.active_ingredients?.slice(0, 2).map((ing, idx) => (
-                <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
-                  {ing.name}
-                </span>
-              ))}
-              {(data.composition?.active_ingredients?.length || 0) > 2 && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-400">
-                  +{data.composition.active_ingredients.length - 2} další
-                </span>
-              )}
+            <div className="mb-2"><h3 className="font-bold text-slate-900 leading-tight line-clamp-2">{data.full_name}</h3><p className="text-xs text-blue-600 font-bold mt-1 uppercase">{data.brand}</p></div>
+            <div className="mt-auto pt-3 border-t flex justify-between items-center">
+              <div><span className="text-xs text-slate-400 block">Cena</span><span className="font-mono font-bold text-slate-700">{data.detected_price ? `${data.detected_price} ${data.currency}` : '—'}</span></div>
+              {source_url && <button onClick={e => {e.stopPropagation(); onSourceClick(source_url)}} className="text-xs text-blue-500 flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Zdroj</button>}
             </div>
           </>
         )}
       </div>
-
-      {/* Edit Footer */}
       {isEditing && (
-        <div className="p-2 bg-slate-50 border-t border-slate-200 flex gap-2">
-          <button 
-            onClick={handleSave} 
-            disabled={isSaving}
-            className="flex-1 bg-blue-600 text-white text-xs font-bold py-1.5 rounded hover:bg-blue-700 flex justify-center items-center gap-1"
-          >
-            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Uložit
-          </button>
-          <button 
-            onClick={() => setIsEditing(false)}
-            className="px-3 bg-white border border-slate-300 text-slate-600 text-xs font-bold rounded hover:bg-slate-50"
-          >
-            Zrušit
-          </button>
+        <div className="p-2 bg-slate-50 border-t flex gap-2">
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 bg-blue-600 text-white text-xs font-bold py-1.5 rounded flex justify-center items-center gap-1">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Uložit</button>
+          <button onClick={() => setIsEditing(false)} className="px-3 bg-white border text-xs font-bold rounded">Zrušit</button>
         </div>
       )}
     </div>
   );
 };
 
-
-// --- MAIN APP ---
+// --- APP ---
 function App() {
-  // State
+  const [currentView, setCurrentView] = useState('dashboard');
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
-    q: "",
-    minPrice: "",
-    maxPrice: "",
-    sourceUrl: ""
-  });
-  const [lastUpdated, setLastUpdated] = useState(Date.now()); // Trigger for refetch
+  const [lastUpdated, setLastUpdated] = useState(Date.now());
 
-  // Debounced Search Query
-  const debouncedQ = useDebounce(filters.q, 500);
-
-  // FETCH SCANS
   const fetchScans = useCallback(async () => {
+    if (currentView !== 'dashboard') return;
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (debouncedQ) params.append("q", debouncedQ);
-      if (filters.sourceUrl) params.append("source_url", filters.sourceUrl);
-      if (filters.minPrice) params.append("min_price", filters.minPrice);
-      if (filters.maxPrice) params.append("max_price", filters.maxPrice);
-      params.append("limit", "50"); // Hard limit for dashboard
-
-      const res = await fetch(`${API_URL}/scan/list?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      
+      const res = await fetch(`${API_URL}/scan/list?limit=50`);
       const data = await res.json();
       setScans(data);
-    } catch (e) {
-      console.error("Fetch error:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedQ, filters.sourceUrl, filters.minPrice, filters.maxPrice, lastUpdated]);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  }, [currentView, lastUpdated]);
 
-  // Initial & Dependency Fetch
-  useEffect(() => {
-    fetchScans();
-  }, [fetchScans]);
+  useEffect(() => { fetchScans(); }, [fetchScans]);
 
-  // UPDATE SCAN (PATCH)
   const updateScan = async (id, updateData) => {
     try {
-      const res = await fetch(`${API_URL}/scan/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData),
-      });
-
+      const res = await fetch(`${API_URL}/scan/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData) });
       if (!res.ok) throw new Error("Update failed");
-      
-      const updatedRecord = await res.json();
-      
-      // Local Update (Optimistic-like but safe)
-      setScans(prev => prev.map(s => s.scan_id === id ? updatedRecord : s));
-      
+      const updated = await res.json();
+      setScans(prev => prev.map(s => s.scan_id === id ? updated : s));
       return true;
-    } catch (e) {
-      console.error("Update error:", e);
-      alert("Chyba při ukládání změn.");
-      return false;
-    }
-  };
-
-  const handleSourceFilter = (url) => {
-    setFilters(prev => ({ ...prev, sourceUrl: url }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleResetFilters = () => {
-    setFilters({ q: "", minPrice: "", maxPrice: "", sourceUrl: "" });
+    } catch (e) { console.error(e); alert("Chyba ukládání."); return false; }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <Header />
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        
-        {/* TOP SECTION: Upload & Stats */}
-        <div className="mb-8">
-          <UploadZone onUploadSuccess={() => setLastUpdated(Date.now())} />
+      <header className="bg-white border-b h-16 flex items-center justify-between px-4 max-w-7xl mx-auto">
+        <div className="font-bold text-xl cursor-pointer flex items-center gap-2" onClick={() => setCurrentView('dashboard')}><Activity className="text-blue-600" /> RDM Scanner</div>
+        <div className="flex bg-slate-100 p-1 rounded-lg">
+          <button onClick={() => setCurrentView('dashboard')} className={cn("px-3 py-1 text-xs font-bold rounded", currentView === 'dashboard' && "bg-white shadow text-blue-600")}>Dashboard</button>
+          <button onClick={() => setCurrentView('lab')} className={cn("px-3 py-1 text-xs font-bold rounded", currentView === 'lab' && "bg-white shadow text-purple-600")}>Data Lab</button>
         </div>
-
-        {/* MIDDLE SECTION: Filters */}
-        <FilterBar 
-          filters={filters} 
-          setFilters={setFilters} 
-          onReset={handleResetFilters} 
-        />
-
-        {/* BOTTOM SECTION: Grid */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-            <p>Načítám produkty...</p>
-          </div>
-        ) : scans.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-500">
-            {scans.map((scan) => (
-              <ProductCard 
-                key={scan.scan_id} 
-                scan={scan} 
-                onUpdate={updateScan} 
-                onSourceClick={handleSourceFilter}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-            <div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-              <Search className="w-8 h-8 text-slate-300" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-700">Žádné produkty nenalezeny</h3>
-            <p className="text-slate-500 max-w-sm mx-auto mt-2">
-              Zkuste změnit filtry nebo nahrajte nový produkt.
-            </p>
-            {(filters.q || filters.sourceUrl) && (
-              <button onClick={handleResetFilters} className="mt-4 text-blue-600 hover:underline text-sm font-medium">
-                Zrušit všechny filtry
-              </button>
+      </header>
+      <main className="min-h-[calc(100vh-64px)]">
+        {currentView === 'lab' ? <DataLab /> : (
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            <UploadZone onUploadSuccess={() => setLastUpdated(Date.now())} />
+            {loading ? <div className="text-center py-20 text-slate-400"><Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" />Načítám...</div> : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {scans.map(s => <ProductCard key={s.scan_id} scan={s} onUpdate={updateScan} onSourceClick={() => {}} />)}
+              </div>
             )}
           </div>
         )}
-
       </main>
-
-      {/* --- AGENTIC WIDGET INTEGRATION --- */}
       <ChatWidget />
     </div>
   );

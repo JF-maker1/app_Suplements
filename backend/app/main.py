@@ -2,7 +2,8 @@ import logging
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import scan, agent_chat  # <--- INTEGRATION POINT 1
+# INTEGRATION POINT 1: Import 'lab' router
+from app.routers import scan, agent_chat, lab  
 from app.config import settings
 
 # Konfigurace Loggování
@@ -31,12 +32,14 @@ app.add_middleware(
 
 # Registrace Routerů
 app.include_router(scan.router)
-app.include_router(agent_chat.router)  # <--- INTEGRATION POINT 2 (Activated)
+app.include_router(agent_chat.router)
+# INTEGRATION POINT 2: Register '/lab' router
+app.include_router(lab.router, prefix="/lab", tags=["Data Lab"])
 
 @app.get("/")
 async def root():
     return {
         "status": "online", 
         "message": "RDM AI Scraper Backend is running",
-        "features": ["Vision Analysis", "Hybrid Agent", "Vector Search"]
+        "features": ["Vision Analysis", "Hybrid Agent", "Vector Search", "Data Lab"]
     }

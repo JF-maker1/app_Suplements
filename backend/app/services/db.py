@@ -121,7 +121,7 @@ class SupabaseService:
             for key, value in update_data.items():
                 if key in top_level_fields:
                     db_payload[key] = value
-                elif key in ["detected_price", "currency"]:
+                elif key in ["detected_price", "currency", "brand"]:
                     json_updates[key] = value
                 else:
                     logger.warning(f"Ignored unknown field in update: {key}")
