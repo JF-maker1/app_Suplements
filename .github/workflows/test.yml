@@ -1,4 +1,4 @@
-name: RDM SUPERSPORT - Test Suite
+name: RDM CI/CD Pipeline
 
 on:
   push:
@@ -9,7 +9,8 @@ on:
 env:
   PYTHON_VERSION: '3.13'
   # --- POISON PILL SECURITY STRATEGY ---
-  # Hardcoded invalid key prevents accidental usage of production quota
+  # Hardcoded invalid key prevents accidental usage of production quota in CI environment.
+  # This guarantees that if a mock fails, the test fails safely (403 Forbidden).
   GOOGLE_API_KEY: "TEST_GUARD_KEY_POISONED"
   GOOGLE_API_KEY_2: "TEST_GUARD_KEY_POISONED"
 
@@ -64,7 +65,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
-          # Pokud existuje requirements-dev, nainstalovat také, jinak stačí základ + pytest
+          # Instalace testovacích nástrojů
           pip install pytest pytest-asyncio pytest-mock httpx
       
       - name: Run Unit Tests
@@ -80,9 +81,6 @@ jobs:
     name: 🔗 Integration Tests
     runs-on: ubuntu-latest
     needs: lint
-    # Spustí se i když unit testy selžou? Ne, needs: lint to blokuje.
-    # Unit a Integration mohou běžet paralelně pokud odstraníme závislost, 
-    # ale pro šetření minut je lepší fail-fast.
     
     steps:
       - uses: actions/checkout@v4
@@ -100,14 +98,14 @@ jobs:
       
       - name: Run Integration Tests
         env:
-          # Supabase secrets must be configured in GitHub Repo Settings
+          # Supabase secrets must be configured in GitHub Repo Settings -> Secrets -> Actions
           SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_TEST_KEY }}
+          # Google API Key is inherited from global env (Poison Pill)
         run: |
           cd backend
           # Spuštění integračních testů
-          # Pokud složka ještě neexistuje nebo je prázdná, pytest může hodit error,
-          # proto přidáme || true pro tento iniciální commit, nebo zajistíme existenci složky.
+          # Kontrola existence adresáře pro prevenci chyby v prvním běhu
           if [ -d "tests/integration" ]; then
             pytest tests/integration/ -v
           else
