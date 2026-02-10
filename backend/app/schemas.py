@@ -70,8 +70,8 @@ class ProductAnalysisResult(BaseModel):
 
     full_name: str = Field(..., description="Přesný název produktu")
     brand: str = Field(..., description="Značka nebo výrobce")
-    category: str = Field(..., description="Kategorie produktu")
-    
+    category: Optional[str] = Field(None, description="Kategorie produktu")
+
     composition: CompositionData = Field(..., description="Složení a nutriční hodnoty")
     specs: ProductSpecs = Field(..., description="Technické specifikace")
     marketing: MarketingData = Field(..., description="Marketingová data")
