@@ -13,11 +13,17 @@ if backend_root not in sys.path:
     sys.path.insert(0, backend_root)
 
 # --- CRITICAL FIX FOR UNIT TESTS (IMPORT TIME VALIDATION) ---
-# Pydantic validates Settings() immediately upon import of app.main.
-# We must inject dummy env vars BEFORE the import happens, otherwise
-# Unit Tests (which have no real .env) will crash.
+# FIX: 'supabase' library validates that the KEY looks like a JWT.
+# We must provide a 3-part string (header.payload.signature).
+DUMMY_JWT = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjEyMzQ1Njc4LCJleHAiOjE5Mjc5MDQ4Nzh9."
+    "dummy-signature"
+)
+
+# Inject dummy env vars BEFORE the import happens
 os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
-os.environ.setdefault("SUPABASE_KEY", "mock-key-for-unit-tests")
+os.environ.setdefault("SUPABASE_KEY", DUMMY_JWT)
 os.environ.setdefault("GOOGLE_API_KEY", "TEST_GUARD_KEY_POISONED")
 
 # Late import to ensure sys.path is set
@@ -45,8 +51,9 @@ def poison_google_credentials(monkeypatch):
     """
     monkeypatch.setenv("GOOGLE_API_KEY", "TEST_GUARD_KEY_POISONED")
     monkeypatch.setenv("GOOGLE_API_KEY_2", "TEST_GUARD_KEY_POISONED")
+    # Also override here to be safe during tests execution
     monkeypatch.setenv("SUPABASE_URL", "https://mock.supabase.co")
-    monkeypatch.setenv("SUPABASE_KEY", "mock-key")
+    monkeypatch.setenv("SUPABASE_KEY", DUMMY_JWT)
 
 
 # 4. DB MOCK
