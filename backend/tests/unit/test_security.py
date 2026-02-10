@@ -1,10 +1,10 @@
-import pytest
 from app.services.data_access import SecurityValidator
 
 # --- SQL INJECTION & SECURITY TESTS ---
 
+
 class TestSecurityValidator:
-    
+
     def test_safe_select_query(self):
         """Standard valid SELECT query should pass."""
         query = "SELECT * FROM products WHERE price < 100"

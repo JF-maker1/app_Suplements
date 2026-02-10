@@ -6,17 +6,20 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SupabaseService:
     def __init__(self):
         # 1. FAIL-FAST VALIDATION (Boot Check)
         if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-            logger.critical("❌ CRITICAL: Missing SUPABASE_URL or SUPABASE_KEY in environment.")
+            logger.critical(
+                "❌ CRITICAL: Missing SUPABASE_URL or SUPABASE_KEY in environment."
+            )
             sys.exit(1)
-            
+
         self.url = settings.SUPABASE_URL
         self.key = settings.SUPABASE_KEY
         self.bucket = settings.SUPABASE_BUCKET
-        
+
         try:
             self.client: Client = create_client(self.url, self.key)
             logger.info("✅ Supabase Client initialized successfully.")
@@ -34,7 +37,7 @@ class SupabaseService:
             self.client.storage.from_(self.bucket).upload(
                 path=file_name,
                 file=file_bytes,
-                file_options={"content-type": content_type, "upsert": "false"}
+                file_options={"content-type": content_type, "upsert": "false"},
             )
             return self.client.storage.from_(self.bucket).get_public_url(file_name)
         except Exception as e:
@@ -62,14 +65,15 @@ class SupabaseService:
             logger.error(f"❌ DB Insert failed: {e}")
             raise e
 
-    def get_scans(self, 
-                  limit: int = 20, 
-                  offset: int = 0, 
-                  search_query: Optional[str] = None,
-                  source_url: Optional[str] = None,
-                  min_price: Optional[float] = None,
-                  max_price: Optional[float] = None
-                  ) -> List[Dict[str, Any]]:
+    def get_scans(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        search_query: Optional[str] = None,
+        source_url: Optional[str] = None,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
         """
         [Blocking I/O] Fetches scans with dynamic filtering.
         """
@@ -80,20 +84,22 @@ class SupabaseService:
             # 2. Dynamic Filters
             if source_url:
                 query = query.eq("source_url", source_url)
-            
+
             if search_query:
                 query = query.ilike("full_name", f"%{search_query}%")
-                
+
             # Filtrování nad JSONB (extra_metadata -> detected_price)
             if min_price is not None:
                 query = query.gte("extra_metadata->detected_price", min_price)
-            
+
             if max_price is not None:
                 query = query.lte("extra_metadata->detected_price", max_price)
 
             # 3. Sorting & Pagination
-            query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
-            
+            query = query.order("created_at", desc=True).range(
+                offset, offset + limit - 1
+            )
+
             # 4. Execute
             response = query.execute()
             return response.data if response.data else []
@@ -102,7 +108,9 @@ class SupabaseService:
             logger.error(f"❌ Fetch Scans failed: {e}")
             raise e
 
-    def update_scan_data(self, scan_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_scan_data(
+        self, scan_id: str, update_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         [Blocking I/O] Updates a scan record.
         FIXED: Uses explicit two-step process (Update -> Fetch) to avoid chaining errors.
@@ -111,10 +119,18 @@ class SupabaseService:
             return None
 
         try:
-            logger.info(f"Updating scan {scan_id} with keys: {list(update_data.keys())}")
-            
+            logger.info(
+                f"Updating scan {scan_id} with keys: {list(update_data.keys())}"
+            )
+
             # 1. Split data into Top-Level Columns vs JSONB Updates
-            top_level_fields = ["full_name", "source_url", "status", "derived_data", "embedding"]
+            top_level_fields = [
+                "full_name",
+                "source_url",
+                "status",
+                "derived_data",
+                "embedding",
+            ]
             db_payload = {}
             json_updates = {}
 
@@ -128,23 +144,39 @@ class SupabaseService:
 
             # 2. JSONB Merge Logic (Safety)
             if json_updates:
-                current_record = self.client.table("scans").select("extra_metadata").eq("id", scan_id).single().execute()
+                current_record = (
+                    self.client.table("scans")
+                    .select("extra_metadata")
+                    .eq("id", scan_id)
+                    .single()
+                    .execute()
+                )
                 if current_record.data:
-                    current_metadata = current_record.data.get("extra_metadata", {}) or {}
+                    current_metadata = (
+                        current_record.data.get("extra_metadata", {}) or {}
+                    )
                     current_metadata.update(json_updates)
                     db_payload["extra_metadata"] = current_metadata
-            
+
             # 3. Execute Update (SAFE MODE)
             if db_payload:
                 # Krok A: Provedeme update (bez .select(), vrátí 204)
-                self.client.table("scans").update(db_payload).eq("id", scan_id).execute()
-                
+                self.client.table("scans").update(db_payload).eq(
+                    "id", scan_id
+                ).execute()
+
                 # Krok B: Načteme aktualizovaný záznam
                 # Toto je robustnější než spoléhat na 'return=representation' hlavičku
-                updated_response = self.client.table("scans").select("*").eq("id", scan_id).single().execute()
-                
+                updated_response = (
+                    self.client.table("scans")
+                    .select("*")
+                    .eq("id", scan_id)
+                    .single()
+                    .execute()
+                )
+
                 return updated_response.data if updated_response.data else None
-            
+
             return None
 
         except Exception as e:

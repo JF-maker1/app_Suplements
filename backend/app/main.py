@@ -2,15 +2,15 @@ import logging
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 # INTEGRATION POINT 1: Import 'lab' router
-from app.routers import scan, agent_chat, lab  
-from app.config import settings
+from app.routers import scan, agent_chat, lab
 
 # Konfigurace Loggování
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -18,13 +18,19 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="RDM AI Scraper API",
     version="0.8.0",
-    description="Sprint 05: Hybrid Intelligence & Agentic Orchestration"
+    description="Sprint 05: Hybrid Intelligence & Agentic Orchestration",
 )
 
 # --- CORS KONFIGURACE ---
+# UPDATE SPRINT 8.3: Network Hardening
+# Povolení specifických originů pro Docker a Local Dev prostředí
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",  # Local Host Dev
+        "http://127.0.0.1:3000",  # Local IP Dev
+        "http://rdm-frontend",  # Docker Internal Network
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,10 +42,11 @@ app.include_router(agent_chat.router)
 # INTEGRATION POINT 2: Register '/lab' router
 app.include_router(lab.router, prefix="/lab", tags=["Data Lab"])
 
+
 @app.get("/")
 async def root():
     return {
-        "status": "online", 
+        "status": "online",
         "message": "RDM AI Scraper Backend is running",
-        "features": ["Vision Analysis", "Hybrid Agent", "Vector Search", "Data Lab"]
+        "features": ["Vision Analysis", "Hybrid Agent", "Vector Search", "Data Lab"],
     }

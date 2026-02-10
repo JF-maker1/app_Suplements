@@ -15,3 +15,5 @@ raw_scans/
 # RDM Snapshot Tool (Meta-data)
 rdm_snapshot.py
 _project_snapshot.md
+**/node_modules
+frontend/dist

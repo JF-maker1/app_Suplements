@@ -3,7 +3,7 @@ import json
 import logging
 import random
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
 
@@ -12,35 +12,49 @@ from app.services.db import SupabaseService
 
 logger = logging.getLogger(__name__)
 
+
 # ==============================================================================
 # 1. SECURITY VALIDATOR (TR-01)
 # ==============================================================================
 class SecurityValidator:
     FORBIDDEN_KEYWORDS = [
-        "DROP", "DELETE", "INSERT", "UPDATE", "ALTER", 
-        "GRANT", "REVOKE", "TRUNCATE", "EXEC", "EXECUTE", 
-        "CREATE", "REPLACE", "function", "procedure"
+        "DROP",
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "ALTER",
+        "GRANT",
+        "REVOKE",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "CREATE",
+        "REPLACE",
+        "function",
+        "procedure",
     ]
 
     @staticmethod
     def is_safe_sql(query: str) -> bool:
-        if not query: return False
+        if not query:
+            return False
         q_norm = query.strip()
         q_upper = q_norm.upper()
-        
+
         if not q_upper.startswith("SELECT"):
             logger.warning("SQL Security: Query does not start with SELECT.")
             return False
-            
+
         if ";" in q_norm:
             logger.warning("SQL Security: Query contains semicolon.")
             return False
-            
+
         for keyword in SecurityValidator.FORBIDDEN_KEYWORDS:
-            if re.search(fr"\b{keyword}\b", q_upper):
+            if re.search(rf"\b{keyword}\b", q_upper):
                 logger.warning(f"SQL Security: Forbidden keyword detected: {keyword}")
                 return False
         return True
+
 
 # ==============================================================================
 # 2. SQL SERVICE (ROBUST)
@@ -49,25 +63,31 @@ class SqlService:
     def __init__(self):
         self.db = SupabaseService()
         self._init_gemini()
-        
+
     def _init_gemini(self):
         self.api_keys = []
-        if settings.GOOGLE_API_KEY: self.api_keys.append(settings.GOOGLE_API_KEY)
-        if getattr(settings, 'GOOGLE_API_KEY_2', None): self.api_keys.append(settings.GOOGLE_API_KEY_2)
-        if getattr(settings, 'GOOGLE_API_KEY_3', None): self.api_keys.append(settings.GOOGLE_API_KEY_3)
-        if getattr(settings, 'GOOGLE_API_KEY_4', None): self.api_keys.append(settings.GOOGLE_API_KEY_4)
-        if getattr(settings, 'GOOGLE_API_KEY_5', None): self.api_keys.append(settings.GOOGLE_API_KEY_5)
-        
+        if settings.GOOGLE_API_KEY:
+            self.api_keys.append(settings.GOOGLE_API_KEY)
+        if getattr(settings, "GOOGLE_API_KEY_2", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_2)
+        if getattr(settings, "GOOGLE_API_KEY_3", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_3)
+        if getattr(settings, "GOOGLE_API_KEY_4", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_4)
+        if getattr(settings, "GOOGLE_API_KEY_5", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_5)
+
         # Model Rotation for SQL Gen
         self.model_rotation = [
             "models/gemini-1.5-flash-latest",
             "models/gemini-flash-latest",
             "models/gemini-1.5-pro-latest",
-            "models/gemini-pro"
+            "models/gemini-pro",
         ]
 
     def _get_random_key(self):
-        if not self.api_keys: raise ValueError("No API Keys available.")
+        if not self.api_keys:
+            raise ValueError("No API Keys available.")
         return random.choice(self.api_keys)
 
     async def generate_sql(self, user_query: str) -> str:
@@ -79,22 +99,27 @@ class SqlService:
         User Question: "{user_query}"
         SQL:
         """
-        
+
         max_retries = max(len(self.api_keys) * 2, 4)
         last_error = None
 
         for attempt in range(max_retries):
             current_key = self._get_random_key()
-            
+
             # Select Model (Round Robin)
             current_model = self.model_rotation[attempt % len(self.model_rotation)]
 
             try:
                 genai.configure(api_key=current_key)
                 model = genai.GenerativeModel(current_model)
-                
+
                 response = await model.generate_content_async(prompt)
-                sql = response.text.strip().replace("```sql", "").replace("```", "").strip()
+                sql = (
+                    response.text.strip()
+                    .replace("```sql", "")
+                    .replace("```", "")
+                    .strip()
+                )
                 if sql:
                     return sql
             except Exception as e:
@@ -115,13 +140,14 @@ class SqlService:
             logger.error(f"SQL Execution Failed: {e}")
             raise e
 
+
 # ==============================================================================
 # 3. REPORT SERVICE
 # ==============================================================================
 class ReportService:
     def __init__(self):
         self.db = SupabaseService()
-        
+
     def get_monthly_spend(self) -> List[Dict[str, Any]]:
         try:
             return self.db.client.table("view_monthly_spend").select("*").execute().data
@@ -131,10 +157,16 @@ class ReportService:
 
     def get_category_distribution(self) -> List[Dict[str, Any]]:
         try:
-            return self.db.client.table("view_category_distribution").select("*").execute().data
+            return (
+                self.db.client.table("view_category_distribution")
+                .select("*")
+                .execute()
+                .data
+            )
         except Exception as e:
             logger.error(f"ReportService Error: {e}")
             return []
+
 
 # ==============================================================================
 # 4. INTENT SERVICE (HARDENED PROMPT)
@@ -142,16 +174,21 @@ class ReportService:
 class IntentService:
     def __init__(self):
         self.api_keys = []
-        if settings.GOOGLE_API_KEY: self.api_keys.append(settings.GOOGLE_API_KEY)
-        if getattr(settings, 'GOOGLE_API_KEY_2', None): self.api_keys.append(settings.GOOGLE_API_KEY_2)
-        if getattr(settings, 'GOOGLE_API_KEY_3', None): self.api_keys.append(settings.GOOGLE_API_KEY_3)
-        if getattr(settings, 'GOOGLE_API_KEY_4', None): self.api_keys.append(settings.GOOGLE_API_KEY_4)
-        if getattr(settings, 'GOOGLE_API_KEY_5', None): self.api_keys.append(settings.GOOGLE_API_KEY_5)
-        
+        if settings.GOOGLE_API_KEY:
+            self.api_keys.append(settings.GOOGLE_API_KEY)
+        if getattr(settings, "GOOGLE_API_KEY_2", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_2)
+        if getattr(settings, "GOOGLE_API_KEY_3", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_3)
+        if getattr(settings, "GOOGLE_API_KEY_4", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_4)
+        if getattr(settings, "GOOGLE_API_KEY_5", None):
+            self.api_keys.append(settings.GOOGLE_API_KEY_5)
+
         self.model_rotation = [
             "models/gemini-1.5-flash-latest",
             "models/gemini-flash-latest",
-            "models/gemini-2.0-flash"
+            "models/gemini-2.0-flash",
         ]
 
     async def classify_intent(self, user_query: str) -> Dict[str, str]:
@@ -194,9 +231,10 @@ class IntentService:
         OUTPUT FORMAT: STRICT JSON only.
         {{ "intent": "CATEGORY" }}
         """
-        
-        if not self.api_keys: return {"intent": "GENERAL_CHAT"}
-        
+
+        if not self.api_keys:
+            return {"intent": "GENERAL_CHAT"}
+
         max_retries = max(len(self.api_keys) * 2, 4)
 
         for attempt in range(max_retries):
@@ -206,15 +244,17 @@ class IntentService:
             try:
                 genai.configure(api_key=current_key)
                 model = genai.GenerativeModel(current_model)
-                
+
                 response = await model.generate_content_async(
-                    prompt, 
-                    generation_config=GenerationConfig(response_mime_type="application/json")
+                    prompt,
+                    generation_config=GenerationConfig(
+                        response_mime_type="application/json"
+                    ),
                 )
-                
+
                 return json.loads(response.text)
-                
-            except Exception as e:
+
+            except Exception:
                 await asyncio.sleep(0.3)
 
         return {"intent": "GENERAL_CHAT"}
