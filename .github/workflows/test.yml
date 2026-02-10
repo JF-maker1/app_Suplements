@@ -1,0 +1,115 @@
+name: RDM SUPERSPORT - Test Suite
+
+on:
+  push:
+    branches: [ main, develop, "sprint-08**" ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_VERSION: '3.13'
+  # --- POISON PILL SECURITY STRATEGY ---
+  # Hardcoded invalid key prevents accidental usage of production quota
+  GOOGLE_API_KEY: "TEST_GUARD_KEY_POISONED"
+  GOOGLE_API_KEY_2: "TEST_GUARD_KEY_POISONED"
+
+jobs:
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # JOB 1: Code Quality (Fast Fail)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lint:
+    name: 🔍 Lint & Format Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install linting tools
+        run: |
+          pip install ruff black
+      
+      - name: Run ruff (Linter)
+        run: |
+          # Kontrola backend adresáře
+          ruff check backend/app/ backend/tests/
+      
+      - name: Run black (Formatter Check)
+        run: |
+          # Kontrola formátování (zda by black něco změnil)
+          black --check backend/app/ backend/tests/
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # JOB 2: Unit Tests (Isolated)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          # Pokud existuje requirements-dev, nainstalovat také, jinak stačí základ + pytest
+          pip install pytest pytest-asyncio pytest-mock httpx
+      
+      - name: Run Unit Tests
+        run: |
+          cd backend
+          # Spuštění pouze unit testů (rychlé, bez DB)
+          pytest tests/unit/ -v
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # JOB 3: Integration Tests (With DB)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    # Spustí se i když unit testy selžou? Ne, needs: lint to blokuje.
+    # Unit a Integration mohou běžet paralelně pokud odstraníme závislost, 
+    # ale pro šetření minut je lepší fail-fast.
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-mock httpx
+      
+      - name: Run Integration Tests
+        env:
+          # Supabase secrets must be configured in GitHub Repo Settings
+          SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_TEST_KEY }}
+        run: |
+          cd backend
+          # Spuštění integračních testů
+          # Pokud složka ještě neexistuje nebo je prázdná, pytest může hodit error,
+          # proto přidáme || true pro tento iniciální commit, nebo zajistíme existenci složky.
+          if [ -d "tests/integration" ]; then
+            pytest tests/integration/ -v
+          else
+            echo "⚠️ Integration tests directory not found yet. Skipping."
+          fi
