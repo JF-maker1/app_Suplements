@@ -12,6 +12,14 @@ backend_root = os.path.dirname(current_dir)
 if backend_root not in sys.path:
     sys.path.insert(0, backend_root)
 
+# --- CRITICAL FIX FOR UNIT TESTS (IMPORT TIME VALIDATION) ---
+# Pydantic validates Settings() immediately upon import of app.main.
+# We must inject dummy env vars BEFORE the import happens, otherwise
+# Unit Tests (which have no real .env) will crash.
+os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+os.environ.setdefault("SUPABASE_KEY", "mock-key-for-unit-tests")
+os.environ.setdefault("GOOGLE_API_KEY", "TEST_GUARD_KEY_POISONED")
+
 # Late import to ensure sys.path is set
 from app.main import app  # noqa: E402
 
